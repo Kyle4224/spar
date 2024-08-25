@@ -8,10 +8,9 @@ import time
 import rospy
 import actionlib
 from actionlib_msgs.msg import GoalStatus
-from geometry_msgs.msg import Point, PoseStamped
+from geometry_msgs.msg import Point, PoseStamped, Pose
 from spar_msgs.msg import FlightMotionAction, FlightMotionGoal
-from breadcrumb.srv import RequestPath
-from breadcrumb.srv import RequestPathRequest
+from breadcrumb.srv import RequestPath, RequestPathRequest
 
 # This is getting a bit more complicated now, so we'll put our information in
 # a class to keep track of all of our variables. This is not so much different
@@ -291,9 +290,16 @@ def path_planning(waypoints):
 	wps = [] # initialise wps list
 
 	# Loop through the list of waypoints
-	for i in range(len(waypoints)-1):
+	for i in range(0,len(waypoints)-2,2):
 		# Set up a path request for breadcrumb
+		# obstacles are assumed to be generated such that they'll interefere with waypoints, hence
+		# breadcrumb will not find a path if the end position is within an obstacle, however, if the
+		# entire list is sent at once (end position in corner), then A* algorithm will not search
+		# entire area. Need to find middle ground such that breadcrumb will not default on errer & drone
+		# will search entire area. 
 		req = RequestPathRequest()
+
+		# Set start and end point
 		req.start.x = waypoints[i][0]
 		req.start.y = waypoints[i][1]
 		req.start.z = waypoints[i][2]
@@ -301,24 +307,26 @@ def path_planning(waypoints):
 		req.end.y = waypoints[i+1][1]
 		req.end.z = waypoints[i+1][2]
 
+		# Add the intermediate waypoint (second of the three waypoints)
+		intermediate = geometry_msgs.Pose()
+		intermediate.position.x = waypoints[i + 1][0]
+		intermediate.position.y = waypoints[i + 1][1]
+		intermediate.position.z = waypoints[i + 1][2]
+		req.waypoints = [intermediate]
+
 		res = srvc_bc(req)
 
-		# Breadcrumb will return a vector of poses if a solution was found
-		# If no solution was found (i.e. no solution, or request bad
-		# start/end), then breadcrumb returns and empty vector
-		# XXX: You could also use res.path_sparse (see breadcrumb docs)
-		if len(res.path.poses) > 0:
-			# Print the path to the screen
-			rospy.loginfo("Segment %i:", i+1)
-			rospy.loginfo("[%0.2f;%0.2f;%0.2f] => [%0.2f;%0.2f;%0.2f]",req.start.x,req.start.y,req.start.z,req.end.x,req.end.y,req.end.z)
-
-			# Loop through the solution returned from breadcrumb
-			for i in range(len(res.path.poses) - 1):
-			    rospy.loginfo("[%0.2f;%0.2f;%0.2f]",res.path.poses[i].position.x,res.path.poses[i].position.y,res.path.poses[i].position.z)
-				wps.append = ([res.path.poses[i].position.x,res.path.poses[i].position.y,res.path.poses[i].position.z,0])
+		# sparse_path will optimise (to help battery life)
+		if len(res.path_sparse.poses) > 0:  # Check if sparse path is available
+			rospy.loginfo("Sparse path found between waypoints %d, %d, and %d", i, i + 1, i + 2)
+			for pose in res.path_sparse.poses:
+				wps.append([pose.position.x, pose.position.y, pose.position.z, 0])
+		elif len(res.path.poses) > 0:  # Fallback to full path if sparse is not available
+			rospy.loginfo("Full path found between waypoints %d, %d, and %d", i, i + 1, i + 2)
+			for pose in res.path.poses:
+				wps.append([pose.position.x, pose.position.y, pose.position.z, 0])
 		else:
-			rospy.logerr("solution not found")
-
+			rospy.logerr("No valid path found for waypoints %d, %d, and %d", i, i + 1, i + 2)
 	# return appended wps variable (as new waypoint list)
 	return wps
 
