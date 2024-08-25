@@ -297,6 +297,7 @@ def path_planning(waypoints):
 		# entire list is sent at once (end position in corner), then A* algorithm will not search
 		# entire area. Need to find middle ground such that breadcrumb will not default on errer & drone
 		# will search entire area. 
+		# 1) try sending 3 wps to breadcrumb at once
 		req = RequestPathRequest()
 
 		# Set start and end point
@@ -307,7 +308,7 @@ def path_planning(waypoints):
 		req.end.y = waypoints[i+1][1]
 		req.end.z = waypoints[i+1][2]
 
-		# Add the intermediate waypoint (second of the three waypoints)
+		# Add the intermediate waypoint
 		intermediate = geometry_msgs.Pose()
 		intermediate.position.x = waypoints[i + 1][0]
 		intermediate.position.y = waypoints[i + 1][1]
@@ -316,7 +317,7 @@ def path_planning(waypoints):
 
 		res = srvc_bc(req)
 
-		# sparse_path will optimise (to help battery life)
+		# sparse_path will optimise (to reduce flight time and save battery)
 		if len(res.path_sparse.poses) > 0:  # Check if sparse path is available
 			rospy.loginfo("Sparse path found between waypoints %d, %d, and %d", i, i + 1, i + 2)
 			for pose in res.path_sparse.poses:
